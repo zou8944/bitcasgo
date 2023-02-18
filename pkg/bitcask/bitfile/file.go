@@ -25,3 +25,7 @@ func GetValue(meta ValueMeta) ([]byte, error) {
 func PutValue(entryBytes []byte) (fileid int32, valueOffset int64, err error) {
 	return 0, 0, err
 }
+
+func TryMerge() error {
+	return nil
+}

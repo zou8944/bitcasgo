@@ -2,6 +2,8 @@ package bitcask
 
 import (
 	"errors"
+	"fmt"
+	"github.com/robfig/cron"
 	"github.com/zou8944/bitcasgo/pkg/bitcask/bitfile"
 	"github.com/zou8944/bitcasgo/pkg/bitcask/serialization"
 )
@@ -15,6 +17,18 @@ func New(basedir, filename string) (*BitCask, error) {
 	if err != nil {
 		return nil, err
 	}
+	c := cron.New()
+	err = c.AddFunc("0 0 15 * * *", func() {
+		err := bitfile.TryMerge()
+		if err != nil {
+			fmt.Printf("try merge fail. %v", err)
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	c.Start()
+
 	return &BitCask{index: keyDir}, nil
 }
 
