@@ -8,48 +8,72 @@ import (
 	"time"
 )
 
+type VarType byte
+
 const (
-	integer byte = iota
+	integer VarType = iota
 	boolean
 	floating
 	strings
 )
 
 // Serialize key and value to binary byte slice entry, which will be store to file directly
-func Serialize(key, value interface{}) ([]byte, error) {
+func Serialize(key, value interface{}) (bytes []byte, valueType VarType, valueSize int32, err error) {
+	keyType := getType(key)
+	keyBytes, err := getBytes(keyType, key)
+	if err != nil {
+		return
+	}
+	_, keySizeBytes, err := getSize(keyBytes)
+	if err != nil {
+		return
+	}
+
+	valueType = getType(value)
+	valueBytes, err := getBytes(valueType, value)
+	if err != nil {
+		return
+	}
+	valueSize, valueSizeBytes, err := getSize(valueBytes)
+	if err != nil {
+		return
+	}
+
+	epochBytes, err := toBytes(int32(time.Now().UnixMilli()))
+	if err != nil {
+		return
+	}
+	// TODO Add CRC
+
+	bytes = stitching(epochBytes, keyType, valueType, keySizeBytes, valueSizeBytes, keyBytes, valueBytes)
+	return
+}
+
+func SerializeTomb(key interface{}) ([]byte, error) {
 	keyType := getType(key)
 	keyBytes, err := getBytes(keyType, key)
 	if err != nil {
 		return nil, err
 	}
-	keySize, err := getSize(keyBytes)
+	_, keySizeBytes, err := getSize(keyBytes)
 	if err != nil {
 		return nil, err
 	}
-
-	valueType := getType(value)
-	valueBytes, err := getBytes(valueType, value)
-	if err != nil {
-		return nil, err
-	}
-	valueSize, err := getSize(valueBytes)
-	if err != nil {
-		return nil, err
-	}
-
+	// tomb entry has no value info
+	valueType := integer
+	valueSizeBytes := []byte{}
+	valueBytes := []byte{}
 	epochBytes, err := toBytes(int32(time.Now().UnixMilli()))
 	if err != nil {
 		return nil, err
 	}
-	// TODO Add CRC
-
-	return stitching(epochBytes, keyType, valueType, keySize, valueSize, keyBytes, valueBytes), nil
+	return stitching(epochBytes, keyType, valueType, keySizeBytes, valueSizeBytes, keyBytes, valueBytes), nil
 }
 
 // Deserialize a whole binary entry to key and value
 func Deserialize(entry []byte) (key interface{}, value interface{}, err error) {
-	keyType := entry[4]
-	valueType := entry[5]
+	keyType := VarType(entry[4])
+	valueType := VarType(entry[5])
 	keySizeBytes := entry[6:10]
 	valueSizeBytes := entry[10:14]
 
@@ -65,16 +89,16 @@ func Deserialize(entry []byte) (key interface{}, value interface{}, err error) {
 	keyBytes := entry[14 : 14+keySize]
 	valueBytes := entry[14+keySize : 14+keySize+valueSize]
 
-	key, err = parseValueFromBytes(keyType, keyBytes)
+	key, err = DeserializeToken(keyType, keyBytes)
 	if err != nil {
 		return
 	}
-	value, err = parseValueFromBytes(valueType, valueBytes)
+	value, err = DeserializeToken(valueType, valueBytes)
 	return
 }
 
 // TODO Support all type, including custom struct
-func getType(token interface{}) byte {
+func getType(token interface{}) VarType {
 	switch token.(type) {
 	case int8, int, int16, int32, int64, uint8, uint, uint16, uint32, uint64:
 		return integer
@@ -87,7 +111,7 @@ func getType(token interface{}) byte {
 	}
 }
 
-func getBytes(varType byte, token interface{}) ([]byte, error) {
+func getBytes(varType VarType, token interface{}) ([]byte, error) {
 	input := token
 	if varType == strings {
 		if jsons, err := json.Marshal(token); err != nil {
@@ -99,14 +123,15 @@ func getBytes(varType byte, token interface{}) ([]byte, error) {
 	return toBytes(input)
 }
 
-func getSize(valueBytes []byte) ([]byte, error) {
+func getSize(valueBytes []byte) (int32, []byte, error) {
 	length := int32(len(valueBytes))
-	return toBytes(length)
+	bytes, err := toBytes(length)
+	return length, bytes, err
 }
 
-func parseValueFromBytes(varType byte, binValue []byte) (interface{}, error) {
-	bf := bytes.NewBuffer(binValue)
-	switch varType {
+func DeserializeToken(tokenType VarType, tokenBytes []byte) (interface{}, error) {
+	bf := bytes.NewBuffer(tokenBytes)
+	switch tokenType {
 	case boolean:
 		var r bool
 		err := binary.Read(bf, binary.BigEndian, &r)
@@ -120,17 +145,17 @@ func parseValueFromBytes(varType byte, binValue []byte) (interface{}, error) {
 		err := binary.Read(bf, binary.BigEndian, &r)
 		return r, err
 	case strings:
-		return string(binValue), nil
+		return string(tokenBytes), nil
 	default:
-		return nil, fmt.Errorf("unsupported var type. %d", varType)
+		return nil, fmt.Errorf("unsupported var type. %d", tokenType)
 	}
 }
 
-func stitching(epoch []byte, keyType, valueType byte, keySize, valueSize, key, value []byte) []byte {
+func stitching(epoch []byte, keyType, valueType VarType, keySize, valueSize, key, value []byte) []byte {
 	var entryBytes []byte
 	entryBytes = append(entryBytes, epoch...)
-	entryBytes = append(entryBytes, keyType)
-	entryBytes = append(entryBytes, valueType)
+	entryBytes = append(entryBytes, byte(keyType))
+	entryBytes = append(entryBytes, byte(keyType))
 	entryBytes = append(entryBytes, keySize...)
 	entryBytes = append(entryBytes, valueSize...)
 	entryBytes = append(entryBytes, key...)
