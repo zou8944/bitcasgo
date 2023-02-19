@@ -12,15 +12,19 @@ import (
 )
 
 const (
-	Suffix     = ".bin"
-	OldFileSep = "-"
+	Suffix      = ".bin"
+	NumberSep   = "-"
+	B           = 1
+	KB          = 1024 * B
+	MB          = 1024 * KB
+	MaxFileSize = 100 * MB
 )
 
 type Manager struct {
-	BaseDir   string
-	FileName  string
-	MaxNumber int32
-	KeyDir    map[interface{}]ValueMeta
+	BaseDir      string
+	FileName     string
+	ActiveFileId int32
+	KeyDir       map[interface{}]ValueMeta
 }
 
 type ValueMeta struct {
@@ -41,7 +45,7 @@ func New(basedir, filename string) (*Manager, error) {
 	})
 	latestOldFile := fileinfos[len(fileinfos)].Name()
 	latestOldFileWithoutSuffix := strings.TrimSuffix(latestOldFile, Suffix)
-	latestOldFileWithoutSuffixSegs := strings.Split(latestOldFileWithoutSuffix, OldFileSep)
+	latestOldFileWithoutSuffixSegs := strings.Split(latestOldFileWithoutSuffix, NumberSep)
 	latestOldFileNumberStr := latestOldFileWithoutSuffixSegs[len(latestOldFileWithoutSuffixSegs)]
 	latestOldFileNumber, err := strconv.Atoi(latestOldFileNumberStr)
 	if err != nil {
@@ -50,16 +54,15 @@ func New(basedir, filename string) (*Manager, error) {
 
 	keyDir, err := scan(fileinfos)
 	manager := &Manager{
-		BaseDir:   basedir,
-		FileName:  filename,
-		MaxNumber: int32(latestOldFileNumber),
-		KeyDir:    keyDir,
+		BaseDir:      basedir,
+		FileName:     filename,
+		ActiveFileId: int32(latestOldFileNumber),
+		KeyDir:       keyDir,
 	}
 	return manager, err
 }
 
 func scan(infos []fs.FileInfo) (map[interface{}]ValueMeta, error) {
-	// 思路：没什么技巧，顺着往下读，塞入map，如果重复了就根据时间戳取舍，读完就OK
 	keyDir := make(map[interface{}]ValueMeta)
 	for _, info := range infos {
 		file, err := os.Open(info.Name())
@@ -76,9 +79,9 @@ func scan(infos []fs.FileInfo) (map[interface{}]ValueMeta, error) {
 
 			epochBytes, err := readBytes(file, 4, offset)
 			keyTypeBytes, err := readBytes(file, 1, offset+4)
-			keySizeBytes, err := readBytes(file, 4, offset+4+1)
-			valueTypeBytes, err := readBytes(file, 1, offset+4+1+4)
-			valueSizeBytes, err := readBytes(file, 4, offset+4+1+4+1)
+			valueTypeBytes, err := readBytes(file, 1, offset+4+1)
+			keySizeBytes, err := readBytes(file, 4, offset+4+1+1)
+			valueSizeBytes, err := readBytes(file, 4, offset+4+1+1+4)
 			if err != nil {
 				return nil, err
 			}
@@ -92,7 +95,7 @@ func scan(infos []fs.FileInfo) (map[interface{}]ValueMeta, error) {
 				return nil, err
 			}
 
-			keyBytes, err := readBytes(file, int(keySize), offset+4+1+4+1+4)
+			keyBytes, err := readBytes(file, int(keySize), offset+4+1+1+4+4)
 			if err != nil {
 				return nil, err
 			}
@@ -106,7 +109,7 @@ func scan(infos []fs.FileInfo) (map[interface{}]ValueMeta, error) {
 				FileId:      1,
 				ValueType:   valueType,
 				ValueSize:   valueSize,
-				ValueOffset: offset + 4 + 1 + 4 + 1 + 4 + int64(keySize),
+				ValueOffset: offset + 4 + 1 + 1 + 4 + 4 + int64(keySize),
 				Timestamp:   epochMillis,
 			}
 
@@ -140,16 +143,42 @@ func readBytes(file *os.File, n int, offset int64) ([]byte, error) {
 	return buf, err
 }
 
-func (m *Manager) ActiveFilePath() string {
-	return fmt.Sprintf("%s/%s%s", m.BaseDir, m.FileName, Suffix)
+func (m *Manager) FilePath(fileid int32) string {
+	return fmt.Sprintf("%s/%s-%d%s", m.BaseDir, m.FileName, fileid, Suffix)
 }
 
 func (m *Manager) GetValue(meta ValueMeta) ([]byte, error) {
-	return nil, nil
+	file, err := os.Open(m.FilePath(meta.FileId))
+	defer func() {
+		_ = file.Close()
+	}()
+	if err != nil {
+		return nil, err
+	}
+	buf := make([]byte, meta.ValueSize, meta.ValueSize)
+	_, err = file.ReadAt(buf, meta.ValueOffset)
+	return buf, err
 }
 
-func (m *Manager) PutValue(entryBytes []byte) (fileid int32, valueOffset int64, err error) {
-	return 0, 0, err
+func (m *Manager) PutValue(entryBytes []byte) (fileid int32, entryOffset int64, err error) {
+	activeFileStat, err := os.Stat(m.FilePath(m.ActiveFileId))
+	if err != nil {
+		return
+	}
+	if activeFileStat.Size() > MaxFileSize {
+		m.ActiveFileId++
+	}
+	activeFile, err := os.OpenFile(m.FilePath(m.ActiveFileId), os.O_RDWR, os.ModeAppend)
+	if err != nil {
+		return
+	}
+	activeFileStat, err = activeFile.Stat()
+	if err != nil {
+		return
+	}
+	offset := activeFileStat.Size()
+	_, err = activeFile.Write(entryBytes)
+	return m.ActiveFileId, offset, err
 }
 
 func (m *Manager) TryMerge() error {

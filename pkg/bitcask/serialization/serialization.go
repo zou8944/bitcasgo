@@ -19,13 +19,13 @@ const (
 )
 
 // Serialize key and value to binary byte slice entry, which will be store to file directly
-func Serialize(key, value interface{}) (bytes []byte, valueType VarType, valueSize int32, err error) {
+func Serialize(key, value interface{}) (bytes []byte, valueType VarType, valueSize int32, valueOffset int32, err error) {
 	keyType := getType(key)
 	keyBytes, err := getBytes(keyType, key)
 	if err != nil {
 		return
 	}
-	_, keySizeBytes, err := getSize(keyBytes)
+	keySize, keySizeBytes, err := getSize(keyBytes)
 	if err != nil {
 		return
 	}
@@ -39,6 +39,8 @@ func Serialize(key, value interface{}) (bytes []byte, valueType VarType, valueSi
 	if err != nil {
 		return
 	}
+
+	valueOffset = 4 + 1 + 1 + 4 + 4 + keySize
 
 	epochBytes, err := toBytes(int32(time.Now().UnixMilli()))
 	if err != nil {

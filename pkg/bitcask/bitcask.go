@@ -50,11 +50,11 @@ func (b *BitCask) Get(key interface{}) (interface{}, error) {
 }
 
 func (b *BitCask) Put(key, value interface{}) error {
-	entryBytes, valueType, valueSize, err := serialization.Serialize(key, value)
+	entryBytes, valueType, valueOffsetInEntry, valueSize, err := serialization.Serialize(key, value)
 	if err != nil {
 		return err
 	}
-	fileid, offset, err := b.fileManager.PutValue(entryBytes)
+	fileid, entryOffset, err := b.fileManager.PutValue(entryBytes)
 	if err != nil {
 		return err
 	}
@@ -62,7 +62,7 @@ func (b *BitCask) Put(key, value interface{}) error {
 		FileId:      fileid,
 		ValueType:   valueType,
 		ValueSize:   valueSize,
-		ValueOffset: offset,
+		ValueOffset: entryOffset + int64(valueOffsetInEntry),
 	}
 	return nil
 }
