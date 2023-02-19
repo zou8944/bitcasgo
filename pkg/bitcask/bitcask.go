@@ -9,17 +9,18 @@ import (
 )
 
 type BitCask struct {
-	index map[interface{}]bitfile.ValueMeta
+	index       map[interface{}]bitfile.ValueMeta
+	fileManager *bitfile.Manager
 }
 
 func New(basedir, filename string) (*BitCask, error) {
-	keyDir, err := bitfile.Scan(basedir, filename)
+	manager, err := bitfile.New(basedir, filename)
 	if err != nil {
 		return nil, err
 	}
 	c := cron.New()
 	err = c.AddFunc("0 0 15 * * *", func() {
-		err := bitfile.TryMerge()
+		err := manager.TryMerge()
 		if err != nil {
 			fmt.Printf("try merge fail. %v", err)
 		}
@@ -29,7 +30,11 @@ func New(basedir, filename string) (*BitCask, error) {
 	}
 	c.Start()
 
-	return &BitCask{index: keyDir}, nil
+	cask := &BitCask{
+		index:       manager.KeyDir,
+		fileManager: manager,
+	}
+	return cask, nil
 }
 
 func (b *BitCask) Get(key interface{}) (interface{}, error) {
@@ -37,7 +42,7 @@ func (b *BitCask) Get(key interface{}) (interface{}, error) {
 	if !ok {
 		return nil, errors.New("record not found")
 	}
-	valueBytes, err := bitfile.GetValue(meta)
+	valueBytes, err := b.fileManager.GetValue(meta)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +54,7 @@ func (b *BitCask) Put(key, value interface{}) error {
 	if err != nil {
 		return err
 	}
-	fileid, offset, err := bitfile.PutValue(entryBytes)
+	fileid, offset, err := b.fileManager.PutValue(entryBytes)
 	if err != nil {
 		return err
 	}
@@ -67,7 +72,7 @@ func (b *BitCask) Delete(key interface{}) error {
 	if err != nil {
 		return err
 	}
-	_, _, err = bitfile.PutValue(entryBytes)
+	_, _, err = b.fileManager.PutValue(entryBytes)
 	if err != nil {
 		return err
 	}

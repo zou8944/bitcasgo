@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -77,11 +78,11 @@ func Deserialize(entry []byte) (key interface{}, value interface{}, err error) {
 	keySizeBytes := entry[6:10]
 	valueSizeBytes := entry[10:14]
 
-	keySize, err := parseInt32(keySizeBytes)
+	keySize, err := ParseInt32(keySizeBytes)
 	if err != nil {
 		return
 	}
-	valueSize, err := parseInt32(valueSizeBytes)
+	valueSize, err := ParseInt32(valueSizeBytes)
 	if err != nil {
 		return
 	}
@@ -175,9 +176,24 @@ func toBytes(input interface{}) ([]byte, error) {
 	return bf.Bytes(), err
 }
 
-func parseInt32(input []byte) (int32, error) {
+func ParseInt32(input []byte) (int32, error) {
 	var r int32
 	bf := bytes.NewBuffer(input)
 	err := binary.Read(bf, binary.BigEndian, &r)
 	return r, err
+}
+
+func ParseVarType(input []byte) (VarType, error) {
+	switch input[0] {
+	case byte(integer):
+		return integer, nil
+	case byte(boolean):
+		return boolean, nil
+	case byte(floating):
+		return floating, nil
+	case byte(strings):
+		return strings, nil
+	default:
+		return 0, errors.New("invalid byte")
+	}
 }
