@@ -181,24 +181,35 @@ func (m *Manager) GetValue(meta ValueMeta) ([]byte, error) {
 }
 
 func (m *Manager) PutValue(entryBytes []byte) (fileid int32, entryOffset int64, err error) {
-	activeFileStat, err := os.Stat(m.FilePath(m.ActiveFileId))
+	activefile, err := m.activeFile()
 	if err != nil {
 		return
 	}
-	if activeFileStat.Size() > MaxFileSize {
-		m.ActiveFileId++
-	}
-	activeFile, err := os.OpenFile(m.FilePath(m.ActiveFileId), os.O_RDWR, os.ModeAppend)
+	activefilestat, err := activefile.Stat()
 	if err != nil {
 		return
 	}
-	activeFileStat, err = activeFile.Stat()
-	if err != nil {
-		return
-	}
-	offset := activeFileStat.Size()
-	_, err = activeFile.Write(entryBytes)
+	offset := activefilestat.Size()
+	_, err = activefile.Write(entryBytes)
 	return m.ActiveFileId, offset, err
+}
+
+func (m *Manager) activeFile() (*os.File, error) {
+	activefilepath := m.FilePath(m.ActiveFileId)
+	activefilestat, err := os.Stat(activefilepath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return os.Create(activefilepath)
+		} else {
+			return nil, err
+		}
+	}
+	if activefilestat.Size() > MaxFileSize {
+		m.ActiveFileId++
+		activefilepath = m.FilePath(m.ActiveFileId)
+		return os.Create(activefilepath)
+	}
+	return os.OpenFile(activefilepath, os.O_RDWR, os.ModePerm)
 }
 
 func (m *Manager) TryMerge() error {

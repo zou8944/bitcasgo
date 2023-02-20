@@ -61,7 +61,85 @@ func TestGetActiveFileId(t *testing.T) {
 }
 
 func TestManager_PutValue(t *testing.T) {
+	t.Run("Active file not exist", func(t *testing.T) {
+		// prepare files and write test byte data
+		baseDir := os.TempDir() + "bitcask"
+		filename := "bitcask"
+		_ = os.Mkdir(baseDir, os.ModePerm)
+		defer func() {
+			_ = os.RemoveAll(baseDir)
+		}()
 
+		// mock object
+		mockManager := Manager{
+			BaseDir:      baseDir,
+			FileName:     filename,
+			ActiveFileId: 1,
+		}
+
+		// put and assert
+		bytes := []byte{1, 2, 3, 4, 5, 6, 7}
+		fileid, offset, err := mockManager.PutValue(bytes)
+		if err != nil {
+			t.Error(err)
+		}
+		assert.Equal(t, 1, int(fileid))
+		assert.Equal(t, 0, int(offset))
+	})
+	t.Run("Active file full", func(t *testing.T) {
+		// prepare files and write test byte data
+		baseDir := os.TempDir() + "bitcask"
+		filename := "bitcask"
+		activefilepath := baseDir + "/bitcask-1.bin"
+		_ = os.Mkdir(baseDir, os.ModePerm)
+		activefile, _ := os.Create(activefilepath)
+		buf := make([]byte, MaxFileSize+1*KB)
+		_, _ = activefile.Write(buf)
+		defer func() {
+			_ = os.RemoveAll(baseDir)
+		}()
+
+		// mock object
+		mockManager := Manager{
+			BaseDir:      baseDir,
+			FileName:     filename,
+			ActiveFileId: 1,
+		}
+
+		fileid, offset, err := mockManager.PutValue([]byte{111, 1, 1})
+		if err != nil {
+			t.Error(err)
+		}
+		assert.Equal(t, 2, int(fileid))
+		assert.Equal(t, 0, int(offset))
+	})
+	t.Run("Active file exist and not full", func(t *testing.T) {
+		// prepare files and write test byte data
+		baseDir := os.TempDir() + "bitcask"
+		filename := "bitcask"
+		activefilepath := baseDir + "/bitcask-1.bin"
+		_ = os.Mkdir(baseDir, os.ModePerm)
+		activefile, _ := os.Create(activefilepath)
+		buf := make([]byte, 3000)
+		_, _ = activefile.Write(buf)
+		defer func() {
+			_ = os.RemoveAll(baseDir)
+		}()
+
+		// mock object
+		mockManager := Manager{
+			BaseDir:      baseDir,
+			FileName:     filename,
+			ActiveFileId: 1,
+		}
+
+		fileid, offset, err := mockManager.PutValue([]byte{111, 1, 1})
+		if err != nil {
+			t.Error(err)
+		}
+		assert.Equal(t, 1, int(fileid))
+		assert.Equal(t, 3000, int(offset))
+	})
 }
 
 func TestManager_GetValue(t *testing.T) {
