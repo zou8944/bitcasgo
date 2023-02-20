@@ -65,7 +65,38 @@ func TestManager_PutValue(t *testing.T) {
 }
 
 func TestManager_GetValue(t *testing.T) {
+	prefixBytes := []byte{0, 0, 0, 0, 0, 0, 0, 0}
+	targetBytes := []byte{1, 0, 1, 11, 21}
 
+	// prepare files and write test byte data
+	baseDir := os.TempDir() + "bitcask"
+	filename := "bitcask"
+	_ = os.Mkdir(baseDir, os.ModePerm)
+	activeFile, _ := os.Create(baseDir + "/bitcask-1.bin")
+	_, _ = activeFile.Write(append(prefixBytes, targetBytes...))
+	defer func() {
+		_ = os.RemoveAll(baseDir)
+	}()
+
+	// mock object
+	mockManager := Manager{
+		BaseDir:      baseDir,
+		FileName:     filename,
+		ActiveFileId: 1,
+	}
+	mockMeta := ValueMeta{
+		FileId:      1,
+		ValueSize:   int32(len(targetBytes)),
+		ValueOffset: int64(len(prefixBytes)),
+	}
+
+	// try and assert
+	actualBytes, err := mockManager.GetValue(mockMeta)
+	if err != nil {
+		t.Error(err)
+	}
+
+	assert.Equal(t, targetBytes, actualBytes)
 }
 
 func TestManager_FilePath(t *testing.T) {
