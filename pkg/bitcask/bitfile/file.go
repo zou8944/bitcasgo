@@ -3,17 +3,16 @@ package bitfile
 import (
 	"fmt"
 	"github.com/zou8944/bitcasgo/pkg/bitcask/serialization"
-	"io/fs"
 	"io/ioutil"
 	"os"
-	"sort"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
 
 const (
 	Suffix      = ".bin"
-	NumberSep   = "-"
+	IDSep       = "-"
 	B           = 1
 	KB          = 1024 * B
 	MB          = 1024 * KB
@@ -36,35 +35,56 @@ type ValueMeta struct {
 }
 
 func New(basedir, filename string) (*Manager, error) {
-	fileinfos, err := ioutil.ReadDir(basedir)
+	activeId, err := GetActiveFileId(basedir, filename)
 	if err != nil {
 		return nil, err
 	}
-	sort.Slice(fileinfos, func(i, j int) bool {
-		return strings.Compare(fileinfos[i].Name(), fileinfos[j].Name()) > 0
-	})
-	latestOldFile := fileinfos[len(fileinfos)].Name()
-	latestOldFileWithoutSuffix := strings.TrimSuffix(latestOldFile, Suffix)
-	latestOldFileWithoutSuffixSegs := strings.Split(latestOldFileWithoutSuffix, NumberSep)
-	latestOldFileNumberStr := latestOldFileWithoutSuffixSegs[len(latestOldFileWithoutSuffixSegs)]
-	latestOldFileNumber, err := strconv.Atoi(latestOldFileNumberStr)
+	keyDir, err := BuildIndexFromFile(basedir, filename)
 	if err != nil {
 		return nil, err
 	}
-
-	keyDir, err := scan(fileinfos)
-	manager := &Manager{
+	m := &Manager{
 		BaseDir:      basedir,
 		FileName:     filename,
-		ActiveFileId: int32(latestOldFileNumber),
+		ActiveFileId: int32(activeId),
 		KeyDir:       keyDir,
 	}
-	return manager, err
+	return m, nil
 }
 
-func scan(infos []fs.FileInfo) (map[interface{}]ValueMeta, error) {
+// GetActiveFileId get the number of current active WAL file, start from 1
+func GetActiveFileId(basedir, filename string) (int, error) {
+	fis, err := ioutil.ReadDir(basedir)
+	if err != nil {
+		return 0, err
+	}
+	var activeId int
+	for _, info := range fis {
+		baseName := filepath.Base(info.Name())
+		if strings.HasPrefix(baseName, filename+IDSep) && strings.HasSuffix(baseName, Suffix) {
+			idStr := strings.TrimSuffix(strings.TrimPrefix(baseName, filename+IDSep), Suffix)
+			id, err := strconv.Atoi(idStr)
+			if err != nil {
+				return 0, err
+			}
+			if id > activeId {
+				activeId = id
+			}
+		}
+	}
+	if activeId == 0 {
+		activeId = 1
+	}
+	return activeId, nil
+}
+
+func BuildIndexFromFile(basedir, filename string) (map[interface{}]ValueMeta, error) {
+	fis, err := ioutil.ReadDir(basedir)
+	if err != nil {
+		return nil, err
+	}
 	keyDir := make(map[interface{}]ValueMeta)
-	for _, info := range infos {
+	for _, info := range fis {
 		file, err := os.Open(info.Name())
 		if err != nil {
 			return nil, err
