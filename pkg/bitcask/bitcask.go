@@ -8,13 +8,13 @@ import (
 	"github.com/zou8944/bitcasgo/pkg/bitcask/serialization"
 )
 
-type BitCask struct {
+type BitCask[K any, V any] struct {
 	index       map[interface{}]bitfile.ValueMeta
 	fileManager *bitfile.Manager
 }
 
-func New(basedir, filename string) (*BitCask, error) {
-	manager, err := bitfile.New(basedir, filename)
+func New[K any, V any](basedir, filename string) (*BitCask[K, V], error) {
+	manager, err := bitfile.New[K](basedir, filename)
 	if err != nil {
 		return nil, err
 	}
@@ -30,14 +30,14 @@ func New(basedir, filename string) (*BitCask, error) {
 	}
 	c.Start()
 
-	cask := &BitCask{
+	cask := &BitCask[K, V]{
 		index:       manager.KeyDir,
 		fileManager: manager,
 	}
 	return cask, nil
 }
 
-func (b *BitCask) Get(key interface{}) (interface{}, error) {
+func (b *BitCask[K, V]) Get(key interface{}) (interface{}, error) {
 	meta, ok := b.index[key]
 	if !ok {
 		return nil, errors.New("record not found")
@@ -46,11 +46,13 @@ func (b *BitCask) Get(key interface{}) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	return serialization.DeserializeToken(meta.ValueType, valueBytes)
+	var v V
+	err = serialization.BinaryUnmarshal(valueBytes, &v)
+	return v, err
 }
 
-func (b *BitCask) Put(key, value interface{}) error {
-	entryBytes, valueType, valueOffsetInEntry, valueSize, err := serialization.Serialize(key, value)
+func (b *BitCask[K, V]) Put(key K, value V) error {
+	entryBytes, valueSize, valueOffsetInEntry, err := serialization.Serialize(key, value)
 	if err != nil {
 		return err
 	}
@@ -60,14 +62,13 @@ func (b *BitCask) Put(key, value interface{}) error {
 	}
 	b.index[key] = bitfile.ValueMeta{
 		FileId:      fileid,
-		ValueType:   valueType,
-		ValueSize:   valueSize,
+		ValueSize:   int32(valueSize),
 		ValueOffset: entryOffset + int64(valueOffsetInEntry),
 	}
 	return nil
 }
 
-func (b *BitCask) Delete(key interface{}) error {
+func (b *BitCask[K, V]) Delete(key interface{}) error {
 	entryBytes, err := serialization.SerializeTomb(key)
 	if err != nil {
 		return err

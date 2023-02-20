@@ -195,21 +195,20 @@ func TestBuildIndexFromFile(t *testing.T) {
 	filename := "bitcask"
 	_ = os.Mkdir(basedir, os.ModePerm)
 	activefile, _ := os.Create(basedir + "/bitcask-1.bin")
-	buf, valuetype, valuesize, valueoffset, _ := serialization.Serialize(1, 2)
-	_, _ = activefile.Write(buf)
-	buf, valuetype, valuesize, valueoffset, _ = serialization.Serialize(2, 12)
+	buf, valuesize, valueoffset, err := serialization.Serialize(1, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, _ = activefile.Write(buf)
 	defer func() {
 		_ = os.RemoveAll(basedir)
 	}()
 
-	index, err := BuildIndexFromFile(basedir, filename)
+	index, err := BuildIndexFromFile[int](basedir, filename)
 	if err != nil {
 		t.Fatal(err)
 	}
-	key := int64(1)
-	assert.Equal(t, 1, int(index[key].FileId))
-	assert.Equal(t, valuetype, index[key].ValueType)
-	assert.Equal(t, valueoffset, index[key].ValueOffset)
-	assert.Equal(t, valuesize, index[key].ValueSize)
+	assert.Equal(t, 1, index[1].FileId)
+	assert.Equal(t, valueoffset, index[1].ValueOffset)
+	assert.Equal(t, valuesize, index[1].ValueSize)
 }

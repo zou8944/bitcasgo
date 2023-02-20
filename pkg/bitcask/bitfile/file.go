@@ -19,44 +19,40 @@ const (
 	MaxFileSize = 100 * MB
 
 	EpochBytes      = 8
-	TypeBytes       = 1
 	SizeBytes       = 4
 	EpochOffset     = 0
-	KeyTypeOffset   = EpochOffset + EpochBytes
-	ValueTypeOffset = EpochOffset + EpochBytes + TypeBytes
-	KeySizeOffset   = EpochOffset + EpochBytes + TypeBytes + TypeBytes
-	ValueSizeOffset = EpochOffset + EpochBytes + TypeBytes + TypeBytes + SizeBytes
-	KeyOffset       = EpochOffset + EpochBytes + TypeBytes + TypeBytes + SizeBytes + SizeBytes
+	KeySizeOffset   = EpochOffset + EpochBytes
+	ValueSizeOffset = EpochOffset + EpochBytes + SizeBytes
+	KeyOffset       = EpochOffset + EpochBytes + SizeBytes + SizeBytes
 )
 
 type Manager struct {
 	BaseDir      string
 	FileName     string
-	ActiveFileId int32
+	ActiveFileId int
 	KeyDir       map[interface{}]ValueMeta
 }
 
 type ValueMeta struct {
-	FileId      int32
-	ValueType   serialization.VarType
+	FileId      int
 	ValueSize   int32
 	ValueOffset int64
 	Timestamp   int64
 }
 
-func New(basedir, filename string) (*Manager, error) {
+func New[K any](basedir, filename string) (*Manager, error) {
 	activeId, err := GetActiveFileId(basedir, filename)
 	if err != nil {
 		return nil, err
 	}
-	keyDir, err := BuildIndexFromFile(basedir, filename)
+	keyDir, err := BuildIndexFromFile[K](basedir, filename)
 	if err != nil {
 		return nil, err
 	}
 	m := &Manager{
 		BaseDir:      basedir,
 		FileName:     filename,
-		ActiveFileId: int32(activeId),
+		ActiveFileId: activeId,
 		KeyDir:       keyDir,
 	}
 	return m, nil
@@ -88,7 +84,7 @@ func GetActiveFileId(basedir, filename string) (int, error) {
 	return activeId, nil
 }
 
-func BuildIndexFromFile(basedir, filename string) (map[interface{}]ValueMeta, error) {
+func BuildIndexFromFile[K any](basedir, filename string) (map[interface{}]ValueMeta, error) {
 	fis, err := ioutil.ReadDir(basedir)
 	if err != nil {
 		return nil, err
@@ -121,36 +117,33 @@ func BuildIndexFromFile(basedir, filename string) (map[interface{}]ValueMeta, er
 		for {
 
 			epochBytes, err := readBytes(file, EpochBytes, offsetBase+EpochOffset)
-			keyTypeBytes, err := readBytes(file, TypeBytes, offsetBase+KeyTypeOffset)
-			valueTypeBytes, err := readBytes(file, TypeBytes, offsetBase+ValueTypeOffset)
 			keySizeBytes, err := readBytes(file, SizeBytes, offsetBase+KeySizeOffset)
 			valueSizeBytes, err := readBytes(file, SizeBytes, offsetBase+ValueSizeOffset)
 			if err != nil {
 				return nil, err
 			}
 
-			epochMillis, err := serialization.ParseInt64(epochBytes)
-			keyType, err := serialization.ParseVarType(keyTypeBytes)
-			keySize, err := serialization.ParseInt32(keySizeBytes)
-			valueType, err := serialization.ParseVarType(valueTypeBytes)
-			valueSize, err := serialization.ParseInt32(valueSizeBytes)
+			var epochMillis int64
+			var keySize int32
+			var valueSize int32
+			var key K
+			err = serialization.BinaryUnmarshal(epochBytes, &epochMillis)
+			err = serialization.BinaryUnmarshal(keySizeBytes, &keySize)
+			err = serialization.BinaryUnmarshal(valueSizeBytes, &valueSize)
 			if err != nil {
 				return nil, err
 			}
-
 			keyBytes, err := readBytes(file, int(keySize), offsetBase+KeyOffset)
 			if err != nil {
 				return nil, err
 			}
-
-			key, err := serialization.DeserializeToken(keyType, keyBytes)
+			err = serialization.BinaryUnmarshal(keyBytes, &key)
 			if err != nil {
 				return nil, err
 			}
 
 			newMeta := ValueMeta{
-				FileId:      int32(fileid),
-				ValueType:   valueType,
+				FileId:      fileid,
 				ValueSize:   valueSize,
 				ValueOffset: offsetBase + KeyOffset + int64(keySize),
 				Timestamp:   epochMillis,
@@ -186,7 +179,7 @@ func readBytes(file *os.File, n int, offset int64) ([]byte, error) {
 	return buf, err
 }
 
-func (m *Manager) FilePath(fileid int32) string {
+func (m *Manager) FilePath(fileid int) string {
 	return fmt.Sprintf("%s/%s-%d%s", m.BaseDir, m.FileName, fileid, Suffix)
 }
 
@@ -203,7 +196,7 @@ func (m *Manager) GetValue(meta ValueMeta) ([]byte, error) {
 	return buf, err
 }
 
-func (m *Manager) PutValue(entryBytes []byte) (fileid int32, entryOffset int64, err error) {
+func (m *Manager) PutValue(entryBytes []byte) (fileid int, entryOffset int64, err error) {
 	activefile, err := m.activeFile()
 	if err != nil {
 		return
