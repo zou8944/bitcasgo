@@ -17,6 +17,16 @@ const (
 	KB          = 1024 * B
 	MB          = 1024 * KB
 	MaxFileSize = 100 * MB
+
+	EpochBytes      = 8
+	TypeBytes       = 1
+	SizeBytes       = 4
+	EpochOffset     = 0
+	KeyTypeOffset   = EpochOffset + EpochBytes
+	ValueTypeOffset = EpochOffset + EpochBytes + TypeBytes
+	KeySizeOffset   = EpochOffset + EpochBytes + TypeBytes + TypeBytes
+	ValueSizeOffset = EpochOffset + EpochBytes + TypeBytes + TypeBytes + SizeBytes
+	KeyOffset       = EpochOffset + EpochBytes + TypeBytes + TypeBytes + SizeBytes + SizeBytes
 )
 
 type Manager struct {
@@ -31,7 +41,7 @@ type ValueMeta struct {
 	ValueType   serialization.VarType
 	ValueSize   int32
 	ValueOffset int64
-	Timestamp   int32
+	Timestamp   int64
 }
 
 func New(basedir, filename string) (*Manager, error) {
@@ -85,28 +95,41 @@ func BuildIndexFromFile(basedir, filename string) (map[interface{}]ValueMeta, er
 	}
 	keyDir := make(map[interface{}]ValueMeta)
 	for _, info := range fis {
-		file, err := os.Open(info.Name())
+		absolutePath := fmt.Sprintf("%s/%s", basedir, info.Name())
+		baseName := info.Name()
+		// only data file need to handle
+		if !strings.HasPrefix(baseName, filename+IDSep) || !strings.HasSuffix(baseName, Suffix) {
+			continue
+		}
+		// retrieve file id
+		fileidStr := strings.TrimSuffix(strings.TrimPrefix(baseName, filename+IDSep), Suffix)
+		fileid, err := strconv.Atoi(fileidStr)
+		if err != nil {
+			return nil, err
+		}
+		// open and read
+		file, err := os.Open(absolutePath)
 		if err != nil {
 			return nil, err
 		}
 
-		offset := int64(0)
+		offsetBase := int64(0)
 		stat, err := file.Stat()
 		if err != nil {
 			return nil, err
 		}
 		for {
 
-			epochBytes, err := readBytes(file, 4, offset)
-			keyTypeBytes, err := readBytes(file, 1, offset+4)
-			valueTypeBytes, err := readBytes(file, 1, offset+4+1)
-			keySizeBytes, err := readBytes(file, 4, offset+4+1+1)
-			valueSizeBytes, err := readBytes(file, 4, offset+4+1+1+4)
+			epochBytes, err := readBytes(file, EpochBytes, offsetBase+EpochOffset)
+			keyTypeBytes, err := readBytes(file, TypeBytes, offsetBase+KeyTypeOffset)
+			valueTypeBytes, err := readBytes(file, TypeBytes, offsetBase+ValueTypeOffset)
+			keySizeBytes, err := readBytes(file, SizeBytes, offsetBase+KeySizeOffset)
+			valueSizeBytes, err := readBytes(file, SizeBytes, offsetBase+ValueSizeOffset)
 			if err != nil {
 				return nil, err
 			}
 
-			epochMillis, err := serialization.ParseInt32(epochBytes)
+			epochMillis, err := serialization.ParseInt64(epochBytes)
 			keyType, err := serialization.ParseVarType(keyTypeBytes)
 			keySize, err := serialization.ParseInt32(keySizeBytes)
 			valueType, err := serialization.ParseVarType(valueTypeBytes)
@@ -115,7 +138,7 @@ func BuildIndexFromFile(basedir, filename string) (map[interface{}]ValueMeta, er
 				return nil, err
 			}
 
-			keyBytes, err := readBytes(file, int(keySize), offset+4+1+1+4+4)
+			keyBytes, err := readBytes(file, int(keySize), offsetBase+KeyOffset)
 			if err != nil {
 				return nil, err
 			}
@@ -126,10 +149,10 @@ func BuildIndexFromFile(basedir, filename string) (map[interface{}]ValueMeta, er
 			}
 
 			newMeta := ValueMeta{
-				FileId:      1,
+				FileId:      int32(fileid),
 				ValueType:   valueType,
 				ValueSize:   valueSize,
-				ValueOffset: offset + 4 + 1 + 1 + 4 + 4 + int64(keySize),
+				ValueOffset: offsetBase + KeyOffset + int64(keySize),
 				Timestamp:   epochMillis,
 			}
 
@@ -148,8 +171,8 @@ func BuildIndexFromFile(basedir, filename string) (map[interface{}]ValueMeta, er
 				keyDir[key] = newMeta
 			}
 
-			offset += 4 + 1 + 4 + 1 + 4 + int64(keySize) + int64(valueSize)
-			if offset >= stat.Size() {
+			offsetBase += KeyOffset + int64(keySize) + int64(valueSize)
+			if offsetBase >= stat.Size() {
 				break
 			}
 		}

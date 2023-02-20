@@ -19,7 +19,7 @@ const (
 )
 
 // Serialize key and value to binary byte slice entry, which will be store to file directly
-func Serialize(key, value interface{}) (bytes []byte, valueType VarType, valueSize int32, valueOffset int32, err error) {
+func Serialize(key, value interface{}) (bytes []byte, valueType VarType, valueSize int32, valueOffset int64, err error) {
 	keyType := getType(key)
 	keyBytes, err := getBytes(keyType, key)
 	if err != nil {
@@ -40,9 +40,9 @@ func Serialize(key, value interface{}) (bytes []byte, valueType VarType, valueSi
 		return
 	}
 
-	valueOffset = 4 + 1 + 1 + 4 + 4 + keySize
+	valueOffset = int64(18 + keySize)
 
-	epochBytes, err := toBytes(int32(time.Now().UnixMilli()))
+	epochBytes, err := toBytes(time.Now().UnixMilli())
 	if err != nil {
 		return
 	}
@@ -180,6 +180,13 @@ func toBytes(input interface{}) ([]byte, error) {
 
 func ParseInt32(input []byte) (int32, error) {
 	var r int32
+	bf := bytes.NewBuffer(input)
+	err := binary.Read(bf, binary.BigEndian, &r)
+	return r, err
+}
+
+func ParseInt64(input []byte) (int64, error) {
+	var r int64
 	bf := bytes.NewBuffer(input)
 	err := binary.Read(bf, binary.BigEndian, &r)
 	return r, err

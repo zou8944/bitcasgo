@@ -2,6 +2,7 @@ package bitfile
 
 import (
 	"github.com/stretchr/testify/assert"
+	"github.com/zou8944/bitcasgo/pkg/bitcask/serialization"
 	"os"
 	"testing"
 )
@@ -15,7 +16,7 @@ func TestGetActiveFileId(t *testing.T) {
 
 		activeId, err := GetActiveFileId(dir, name)
 		if err != nil {
-			t.Error(err)
+			t.Fatal(err)
 		}
 
 		assert.Equal(t, 1, activeId)
@@ -34,7 +35,7 @@ func TestGetActiveFileId(t *testing.T) {
 
 		activeId, err := GetActiveFileId(dir, name)
 		if err != nil {
-			t.Error(err)
+			t.Fatal(err)
 		}
 
 		assert.Equal(t, 1, activeId)
@@ -53,7 +54,7 @@ func TestGetActiveFileId(t *testing.T) {
 
 		activeId, err := GetActiveFileId(dir, name)
 		if err != nil {
-			t.Error(err)
+			t.Fatal(err)
 		}
 
 		assert.Equal(t, 2, activeId)
@@ -81,7 +82,7 @@ func TestManager_PutValue(t *testing.T) {
 		bytes := []byte{1, 2, 3, 4, 5, 6, 7}
 		fileid, offset, err := mockManager.PutValue(bytes)
 		if err != nil {
-			t.Error(err)
+			t.Fatal(err)
 		}
 		assert.Equal(t, 1, int(fileid))
 		assert.Equal(t, 0, int(offset))
@@ -108,7 +109,7 @@ func TestManager_PutValue(t *testing.T) {
 
 		fileid, offset, err := mockManager.PutValue([]byte{111, 1, 1})
 		if err != nil {
-			t.Error(err)
+			t.Fatal(err)
 		}
 		assert.Equal(t, 2, int(fileid))
 		assert.Equal(t, 0, int(offset))
@@ -135,7 +136,7 @@ func TestManager_PutValue(t *testing.T) {
 
 		fileid, offset, err := mockManager.PutValue([]byte{111, 1, 1})
 		if err != nil {
-			t.Error(err)
+			t.Fatal(err)
 		}
 		assert.Equal(t, 1, int(fileid))
 		assert.Equal(t, 3000, int(offset))
@@ -171,7 +172,7 @@ func TestManager_GetValue(t *testing.T) {
 	// try and assert
 	actualBytes, err := mockManager.GetValue(mockMeta)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 
 	assert.Equal(t, targetBytes, actualBytes)
@@ -186,4 +187,29 @@ func TestManager_FilePath(t *testing.T) {
 	path := m.FilePath(2)
 
 	assert.Equal(t, "/users/demo/temp/bitcask/bitcask-2.bin", path)
+}
+
+func TestBuildIndexFromFile(t *testing.T) {
+	// prepare WAL file
+	basedir := os.TempDir() + "/bitcask"
+	filename := "bitcask"
+	_ = os.Mkdir(basedir, os.ModePerm)
+	activefile, _ := os.Create(basedir + "/bitcask-1.bin")
+	buf, valuetype, valuesize, valueoffset, _ := serialization.Serialize(1, 2)
+	_, _ = activefile.Write(buf)
+	buf, valuetype, valuesize, valueoffset, _ = serialization.Serialize(2, 12)
+	_, _ = activefile.Write(buf)
+	defer func() {
+		_ = os.RemoveAll(basedir)
+	}()
+
+	index, err := BuildIndexFromFile(basedir, filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := int64(1)
+	assert.Equal(t, 1, int(index[key].FileId))
+	assert.Equal(t, valuetype, index[key].ValueType)
+	assert.Equal(t, valueoffset, index[key].ValueOffset)
+	assert.Equal(t, valuesize, index[key].ValueSize)
 }
