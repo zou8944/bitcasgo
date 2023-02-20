@@ -69,5 +69,12 @@ func TestManager_GetValue(t *testing.T) {
 }
 
 func TestManager_FilePath(t *testing.T) {
+	m := Manager{
+		BaseDir:      "/users/demo/temp/bitcask",
+		FileName:     "bitcask",
+		ActiveFileId: 1,
+	}
+	path := m.FilePath(2)
 
+	assert.Equal(t, "/users/demo/temp/bitcask/bitcask-2.bin", path)
 }
