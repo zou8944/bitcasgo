@@ -201,6 +201,7 @@ func (m *Manager) PutValue(entryBytes []byte) (fileid int, entryOffset int64, er
 	if err != nil {
 		return
 	}
+	defer func() { _ = activefile.Close() }()
 	activefilestat, err := activefile.Stat()
 	if err != nil {
 		return
@@ -225,7 +226,7 @@ func (m *Manager) activeFile() (*os.File, error) {
 		activefilepath = m.FilePath(m.ActiveFileId)
 		return os.Create(activefilepath)
 	}
-	return os.OpenFile(activefilepath, os.O_RDWR, os.ModePerm)
+	return os.OpenFile(activefilepath, os.O_WRONLY|os.O_APPEND, os.ModePerm)
 }
 
 func (m *Manager) TryMerge() error {
