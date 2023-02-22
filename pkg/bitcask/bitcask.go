@@ -47,7 +47,7 @@ func (b *BitCask[K, V]) Get(key interface{}) (interface{}, error) {
 		return nil, err
 	}
 	var v V
-	err = serialization.BinaryUnmarshal(valueBytes, &v)
+	err = serialization.GobBinaryUnmarshal(valueBytes, &v)
 	return v, err
 }
 
@@ -62,7 +62,7 @@ func (b *BitCask[K, V]) Put(key K, value V) error {
 	}
 	b.index[key] = bitfile.ValueMeta{
 		FileId:      fileid,
-		ValueSize:   int32(valueSize),
+		ValueSize:   valueSize,
 		ValueOffset: entryOffset + int64(valueOffsetInEntry),
 	}
 	return nil

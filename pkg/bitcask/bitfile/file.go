@@ -127,9 +127,9 @@ func BuildIndexFromFile[K any](basedir, filename string) (map[interface{}]ValueM
 			var keySize int32
 			var valueSize int32
 			var key K
-			err = serialization.BinaryUnmarshal(epochBytes, &epochMillis)
-			err = serialization.BinaryUnmarshal(keySizeBytes, &keySize)
-			err = serialization.BinaryUnmarshal(valueSizeBytes, &valueSize)
+			err = serialization.SimpleBinaryUnmarshal(epochBytes, &epochMillis)
+			err = serialization.SimpleBinaryUnmarshal(keySizeBytes, &keySize)
+			err = serialization.SimpleBinaryUnmarshal(valueSizeBytes, &valueSize)
 			if err != nil {
 				return nil, err
 			}
@@ -137,7 +137,7 @@ func BuildIndexFromFile[K any](basedir, filename string) (map[interface{}]ValueM
 			if err != nil {
 				return nil, err
 			}
-			err = serialization.BinaryUnmarshal(keyBytes, &key)
+			err = serialization.GobBinaryUnmarshal(keyBytes, &key)
 			if err != nil {
 				return nil, err
 			}
